@@ -1,0 +1,7 @@
+command:
+  - "python"
+  - "app.py"
+
+env:
+  - name: SERVING_ENDPOINT
+    value: "ai_data_agent_endpoint"
