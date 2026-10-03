@@ -1,0 +1,48 @@
+# Databricks Asset Bundle: AI Data Agent
+
+bundle:
+  name: ai-data-agent
+  engine: direct
+
+include:
+  - resources/*.yml
+
+sync:
+  exclude:
+    - "data/**"
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for all project objects.
+    default: agentic_catalog
+  schema:
+    description: Schema inside the catalog.
+    default: agentic_schema
+  volume:
+    description: Managed volume that stores the raw CSVs.
+    default: customer_service
+  llm_endpoint:
+    description: Foundation-model serving endpoint used by the agent.
+    default: databricks-meta-llama-3-1-8b-instruct
+  agent_endpoint:
+    description: Model Serving endpoint name for the deployed data agent.
+    default: ai_data_agent_endpoint
+  app_name:
+    description: Databricks App name (must be unique in the workspace).
+    default: ai-data-agent-app
+
+targets:
+  dev:
+    mode: development
+    default: true
+    presets:
+      name_prefix: ""
+    workspace:
+      profile: dev-52d59088
+
+  prod:
+    mode: production
+    workspace:
+      profile: dev-52d59088
+    variables:
+      schema: agentic_schema_prod

@@ -1,0 +1,7 @@
+# Databricks App resource for the AI Data Agent chat UI.
+resources:
+  apps:
+    ai_data_agent_app:
+      name: ${var.app_name}
+      description: "AI Data Agent — multi-agent system with SQL Analyst and ETL Analyst sub-agents"
+      source_code_path: ../src/app

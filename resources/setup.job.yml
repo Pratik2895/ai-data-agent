@@ -1,0 +1,33 @@
+# Setup job — deploys the AI Data Agent to Databricks.
+# DAG: load_data -> create_uc_functions -> build_and_deploy_agent
+resources:
+  jobs:
+    setup_ai_data_agent:
+      name: "[${bundle.target}] Setup AI Data Agent"
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: volume
+          default: ${var.volume}
+        - name: llm_endpoint
+          default: ${var.llm_endpoint}
+        - name: agent_endpoint
+          default: ${var.agent_endpoint}
+      tasks:
+        - task_key: load_data
+          notebook_task:
+            notebook_path: ../src/notebooks/01_load_data.py
+        - task_key: create_uc_functions
+          depends_on:
+            - task_key: load_data
+          notebook_task:
+            notebook_path: ../src/notebooks/02_create_uc_functions.py
+        - task_key: build_and_deploy_agent
+          depends_on:
+            - task_key: create_uc_functions
+          notebook_task:
+            notebook_path: ../src/notebooks/03_build_deploy_agent.py
+      queue:
+        enabled: true
