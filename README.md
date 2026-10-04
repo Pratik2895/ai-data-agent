@@ -35,4 +35,6 @@ Local invocation uses the same agent runtime and Databricks authentication; no s
 
 ## Validation
 
+GitHub Actions runs the offline tests and Python compilation on pushes and pull requests.
+
 `tests/test_runtime.py` covers unsafe SQL, cross-catalog queries, CTEs, path traversal, API URL boundaries, SQL failures, CSV transformations, the SQL graph, and ResponsesAgent output. Cloud deployment additionally requires source-data access, catalog/schema create rights, SQL warehouse usage, UC function execution, and available model-serving compute.
