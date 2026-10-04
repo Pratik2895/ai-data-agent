@@ -19,6 +19,8 @@ databricks bundle run ai_data_agent_app --profile dev-52d59088
 
 The app uses the GitHub branch configured in `resources/app.yml`; push source changes there before deploying the app. The workspace requires Git-backed Apps.
 
+Serving provisioning is asynchronous: check that `state.ready` is `READY` and `state.config_update` is `NOT_UPDATING` before querying the endpoint.
+
 The setup job copies the existing customer-service CSVs from the configured source volume, creates the target catalog/schema/volume, loads Delta tables, extracts text from PDFs, registers UC tools, logs the agent, and deploys the named serving endpoint. Supply `--var warehouse_id=<id>` for another SQL warehouse and override catalog/schema/source variables for another environment. Deployment errors fail the job instead of reporting success.
 
 ## Runtime
@@ -29,7 +31,7 @@ ETL supports HTTPS JSON extraction, CSV inspection, column selection, duplicate 
 
 Knowledge search uses the extracted PDF text via a UC function. Text extraction uses pypdf; scanned PDFs need OCR preprocessing. This implementation does not provision a Vector Search index.
 
-Local invocation uses the same agent runtime and Databricks authentication; no separate OpenAI or Anthropic key is required. Load `.env` from `.env.example` with python-dotenv if desired, and invoke `src.agents.agent.DataAgent` with `ResponsesAgentRequest`. CLI-backed SDK authentication requires the Databricks executable on PATH (`DATABRICKS_CLI_PATH` can point to it).
+Local invocation uses the same agent runtime and Databricks authentication; no separate OpenAI or Anthropic key is required. Load `.env` from `.env.example` with python-dotenv if desired, and invoke `src.agents.agent.DataAgent` with `ResponsesAgentRequest`. Run `.venv/Scripts/python.exe main.py "How many customer service tickets are there?" --profile dev-52d59088` after copying `.env.example` to `.env`. The local runner obtains CLI OAuth credentials in memory without writing or displaying them.
 
 ## Validation
 
