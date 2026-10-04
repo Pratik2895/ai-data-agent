@@ -1,5 +1,6 @@
-# Setup job — deploys the AI Data Agent to Databricks.
+# Setup job — deploys the complete AI Data Agent to Databricks.
 # DAG: load_data -> create_uc_functions -> build_and_deploy_agent
+# All tasks in ONE job for end-to-end automated deployment.
 resources:
   jobs:
     setup_ai_data_agent:
@@ -11,23 +12,60 @@ resources:
           default: ${var.schema}
         - name: volume
           default: ${var.volume}
+        - name: source_catalog
+          default: ${var.source_catalog}
+        - name: source_schema
+          default: ${var.source_schema}
+        - name: source_volume
+          default: ${var.source_volume}
         - name: llm_endpoint
           default: ${var.llm_endpoint}
+        - name: llm_low
+          default: ${var.llm_low}
+        - name: llm_medium
+          default: ${var.llm_medium}
+        - name: llm_high
+          default: ${var.llm_high}
+        - name: agent_model_name
+          default: ${var.agent_model_name}
         - name: agent_endpoint
           default: ${var.agent_endpoint}
       tasks:
+        # Task 1: Copy CSVs/PDFs, load Delta tables, parse PDFs, create Vector Search index
         - task_key: load_data
           notebook_task:
-            notebook_path: ../src/notebooks/01_load_data.py
+            notebook_path: ../src/notebooks/01_load_data
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              volume: "{{job.parameters.volume}}"
+              source_catalog: "{{job.parameters.source_catalog}}"
+              source_schema: "{{job.parameters.source_schema}}"
+              source_volume: "{{job.parameters.source_volume}}"
+        # Task 2: Create UC Functions (agent tools)
         - task_key: create_uc_functions
           depends_on:
             - task_key: load_data
           notebook_task:
-            notebook_path: ../src/notebooks/02_create_uc_functions.py
+            notebook_path: ../src/notebooks/02_create_uc_functions
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              volume: "{{job.parameters.volume}}"
+        # Task 3: Build multi-agent system, log to MLflow, deploy to Model Serving
         - task_key: build_and_deploy_agent
           depends_on:
             - task_key: create_uc_functions
           notebook_task:
-            notebook_path: ../src/notebooks/03_build_deploy_agent.py
+            notebook_path: ../src/notebooks/03_build_deploy_agent
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              llm_low: "{{job.parameters.llm_low}}"
+              llm_medium: "{{job.parameters.llm_medium}}"
+              llm_high: "{{job.parameters.llm_high}}"
+              agent_model_name: "{{job.parameters.agent_model_name}}"
+              agent_endpoint: "{{job.parameters.agent_endpoint}}"
       queue:
         enabled: true

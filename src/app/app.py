@@ -1,5 +1,11 @@
-"""AI Data Agent — Databricks App (Gradio chat UI)."""
+"""AI Data Agent — Databricks App (Gradio chat UI).
+
+Browser-based interface for the multi-agent system. The app calls the
+Model Serving endpoint which runs the ResponsesAgent wrapping the
+LangGraph multi-agent system (AI-DECIDE router + SQL/ETL/Knowledge sub-agents).
+"""
 import os
+import json
 
 import gradio as gr
 from databricks.sdk import WorkspaceClient
@@ -7,6 +13,8 @@ from databricks.sdk.core import Config
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
 SERVING_ENDPOINT = os.environ.get("SERVING_ENDPOINT", "ai_data_agent_endpoint")
+CATALOG = os.environ.get("CATALOG", "ai_agent_demo")
+SCHEMA = os.environ.get("SCHEMA", "customer_support")
 
 _base_cfg = Config()
 
@@ -18,6 +26,7 @@ def _workspace_client(user_token: str | None) -> WorkspaceClient:
 
 
 def respond(message, history, request: gr.Request):
+    """Send user message to the multi-agent serving endpoint and return the response."""
     user_token = None
     if request is not None:
         user_token = request.headers.get("x-forwarded-access-token")
@@ -52,26 +61,34 @@ def respond(message, history, request: gr.Request):
         resp = ws.serving_endpoints.query(
             name=SERVING_ENDPOINT,
             messages=sdk_messages,
-            max_tokens=800,
+            max_tokens=1000,
         )
         return resp.choices[0].message.content
     except Exception as e:
-        return f"Could not reach the agent endpoint `{SERVING_ENDPOINT}`.\n\nDetails: `{e}`"
+        return (
+            f"⚠️ Could not reach the agent endpoint `{SERVING_ENDPOINT}`.\n\n"
+            f"Details: `{e}`\n\n"
+            f"Make sure the setup job has completed and the endpoint is READY."
+        )
 
 
 demo = gr.ChatInterface(
     fn=respond,
-    title="AI Data Agent",
+    title="🤖 AI Data Agent — Multi-Agent System",
     description=(
-        "Ask about **data retrieval** (SQL queries, analytics, aggregations) or "
-        "**ETL operations** (extract, transform, load data from APIs). "
-        "Powered by a multi-agent system with SQL Analyst and ETL Analyst sub-agents."
+        "Ask questions about **customer data** (SQL queries, analytics), "
+        "**ETL operations** (extract, transform, load), or **product documentation** (PDF search). "
+        "The AI-DECIDE router automatically directs your query to the right sub-agent:\n"
+        "• **SQL Analyst** — stateful orchestration with AI-as-judge for safe query execution\n"
+        "• **ETL Analyst** — ReAct loop with UC function tools\n"
+        "• **Knowledge Search** — searches parsed PDF product documentation"
     ),
     examples=[
-        "What are the different types of payment methods we have?",
-        "How many orders did we get last month?",
+        "What are the different types of customer issues in our database?",
+        "How many tickets are resolved vs pending?",
+        "What does the product documentation say about the BrewMaster 3000?",
+        "Analyze customer complaint patterns and find the most common issue types",
         "I want to extract data from an API and save it as CSV",
-        "Transform the data file and remove all null values",
     ],
     theme=gr.themes.Soft(),
 )

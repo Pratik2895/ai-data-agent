@@ -1,4 +1,7 @@
-# Databricks Asset Bundle: AI Data Agent
+# Databricks Asset Bundle: AI Data Agent — Multi-Agent System
+# Demonstrates: Stateful Orchestration, ReAct Loops, Context Engineering,
+# AI-as-Judge, Sub-Agents (SQL Analyst, ETL Analyst, Knowledge Search),
+# LLM Routing, UC Functions as Tools, Model Serving, Databricks App
 
 bundle:
   name: ai-data-agent
@@ -10,20 +13,43 @@ include:
 sync:
   exclude:
     - "data/**"
+    - ".git/**"
+    - ".gitignore"
 
 variables:
   catalog:
     description: Unity Catalog catalog for all project objects.
-    default: agentic_catalog
+    default: ai_agent_demo
   schema:
     description: Schema inside the catalog.
-    default: agentic_schema
+    default: customer_support
   volume:
-    description: Managed volume that stores the raw CSVs.
+    description: Managed volume that stores the raw CSVs and PDFs.
+    default: data_files
+  source_catalog:
+    description: Source catalog to copy data from.
+    default: agentic_catalog
+  source_schema:
+    description: Source schema to copy data from.
+    default: agentic_schema
+  source_volume:
+    description: Source volume name.
     default: customer_service
   llm_endpoint:
-    description: Foundation-model serving endpoint used by the agent.
+    description: Foundation Model API endpoint for the main agent LLM.
+    default: databricks-llama-4-maverick
+  llm_low:
+    description: Low-end LLM for simple tasks (curation, formatting).
     default: databricks-meta-llama-3-1-8b-instruct
+  llm_medium:
+    description: Medium LLM for SQL generation and code tasks.
+    default: databricks-gpt-oss-20b
+  llm_high:
+    description: High-end LLM for complex reasoning and tool-calling.
+    default: databricks-llama-4-maverick
+  agent_model_name:
+    description: Registered model name in Unity Catalog for the agent.
+    default: ai_agent_demo.customer_support.data_agent
   agent_endpoint:
     description: Model Serving endpoint name for the deployed data agent.
     default: ai_data_agent_endpoint
@@ -45,4 +71,4 @@ targets:
     workspace:
       profile: dev-52d59088
     variables:
-      schema: agentic_schema_prod
+      schema: customer_support_prod

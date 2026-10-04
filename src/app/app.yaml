@@ -5,3 +5,7 @@ command:
 env:
   - name: SERVING_ENDPOINT
     value: "ai_data_agent_endpoint"
+  - name: CATALOG
+    value: "ai_agent_demo"
+  - name: SCHEMA
+    value: "customer_support"
