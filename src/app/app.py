@@ -19,16 +19,12 @@ _base_cfg = Config()
 
 
 def _workspace_client(user_token: str | None) -> WorkspaceClient:
-    if user_token:
-        return WorkspaceClient(host=_base_cfg.host, token=user_token, auth_type="pat")
     return WorkspaceClient(config=_base_cfg)
 
 
 def respond(message, history, request: gr.Request):
     """Send user message to the multi-agent serving endpoint and return the response."""
     user_token = None
-    if request is not None:
-        user_token = request.headers.get("x-forwarded-access-token")
 
     messages = []
     for turn in history or []:
