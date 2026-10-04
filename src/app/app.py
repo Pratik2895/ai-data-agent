@@ -5,7 +5,7 @@ Model Serving endpoint which runs the ResponsesAgent wrapping the
 LangGraph multi-agent system (AI-DECIDE router + SQL/ETL/Knowledge sub-agents).
 """
 import os
-import json
+import logging
 
 import gradio as gr
 from databricks.sdk import WorkspaceClient
@@ -49,31 +49,26 @@ def respond(message, history, request: gr.Request):
         if not texts:
             raise RuntimeError("Endpoint returned no text output")
         return "\n".join(texts)
-    except Exception as e:
-        return (
-            f"⚠️ Could not reach the agent endpoint `{SERVING_ENDPOINT}`.\n\n"
-            f"Details: `{e}`\n\n"
-            f"Make sure the setup job has completed and the endpoint is READY."
-        )
+    except Exception:
+        logging.exception("Agent endpoint request failed")
+        return "The agent could not complete this request. Please retry; if it continues, ask your administrator to check the agent logs."
+
 
 
 demo = gr.ChatInterface(
     fn=respond,
     title="🤖 AI Data Agent — Multi-Agent System",
     description=(
-        "Ask questions about **customer data** (SQL queries, analytics), "
-        "**ETL operations** (extract, transform, load), or **product documentation** (PDF search). "
-        "The AI-DECIDE router automatically directs your query to the right sub-agent:\n"
-        "• **SQL Analyst** — stateful orchestration with AI-as-judge for safe query execution\n"
-        "• **ETL Analyst** — API extraction and CSV transformation\n"
-        "• **Knowledge Search** — searches parsed PDF product documentation"
+        "Ask questions about customer-service data and product manuals, "
+        "or extract and transform data from an approved API. "
+        "CSV outputs are temporary files on the agent instance."
     ),
     examples=[
         "What are the different types of customer issues in our database?",
         "How many tickets are resolved vs pending?",
-        "What does the product documentation say about the BrewMaster 3000?",
+        "What does the product documentation say about AccountEase Pro?",
         "Analyze customer complaint patterns and find the most common issue types",
-        "I want to extract data from an API and save it as CSV",
+        "Extract https://jsonplaceholder.typicode.com/posts and save posts.csv",
     ],
 )
 
