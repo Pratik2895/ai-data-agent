@@ -30,8 +30,7 @@ RETURN (
     ' Product documentation: ',
     (
       SELECT concat_ws(' | ', collect_list(concat(file_name, ': ', array_join(text_content, ' '))))
-      FROM {catalog}.{schema}.product_docs
-      LIMIT 20
+      FROM (SELECT * FROM {catalog}.{schema}.product_docs ORDER BY file_name LIMIT 20)
     )
   ))
 )
@@ -48,17 +47,14 @@ RETURNS STRING
 LANGUAGE SQL
 COMMENT 'Returns schema info for all tables: table names, column names, data types. Used for context engineering in the SQL Analyst agent.'
 RETURN (
-  SELECT concat_ws('\n', collect_list(
-    concat('Table: {catalog}.{schema}.', table_name, ' | Columns: ',
-      (
-        SELECT concat_ws(', ', collect_list(concat(column_name, ' (', data_type, ')')))
-        FROM {catalog}.information_schema.columns
-        WHERE table_schema = '{schema}' AND table_name = t.table_name
-      )
-    )
-  ))
-  FROM {catalog}.information_schema.tables t
-  WHERE table_schema = '{schema}'
+  SELECT concat_ws(' | ', collect_list(concat('Table: {catalog}.{schema}.', table_name,
+      ' | Columns: ', columns_text)))
+  FROM (
+    SELECT table_name, concat_ws(', ', collect_list(concat(column_name, ' (', data_type, ')'))) AS columns_text
+    FROM {catalog}.information_schema.columns
+    WHERE table_schema = '{schema}'
+    GROUP BY table_name
+  )
 )
 """)
 print(f"  Created: {catalog}.{schema}.get_schema_info")

@@ -23,6 +23,8 @@ import os
 agent_source = dbutils.widgets.get("agent_source")
 agent_local = "/tmp/agent.py"
 shutil.copy2(agent_source, agent_local)
+import sys
+sys.path.insert(0, os.path.dirname(agent_source))
 print(f"Copied agent.py to {agent_local}")
 
 # Set environment variables for the agent

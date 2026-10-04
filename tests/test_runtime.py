@@ -44,3 +44,23 @@ def test_sql_graph(monkeypatch):
     monkeypatch.setattr(agent,'_generate_sql',lambda state: state.model_copy(update={'generated_sql':'SELECT COUNT(*) FROM ai_agent_demo.customer_support.products'}))
     result=agent._build_sql_analyst_graph().invoke({'user_question':'Count products'})
     assert result['final_answer'] == 'Summary'
+
+def test_app_responses_contract(monkeypatch):
+    import importlib.util
+    import databricks.sdk.core
+    monkeypatch.setattr(databricks.sdk.core,'Config',lambda: N(host='https://example.test'))
+    spec=importlib.util.spec_from_file_location('chat_app',Path(__file__).resolve().parents[1]/'src/app/app.py')
+    app=importlib.util.module_from_spec(spec); spec.loader.exec_module(app)
+    calls=[]
+    def do(method,path,body):
+        calls.append((method,path,body))
+        return {'output':[{'content':[{'type':'output_text','text':'42'}]}]}
+    monkeypatch.setattr(app,'_workspace_client',lambda token: N(api_client=N(do=do)))
+    assert app.respond('Count tickets',[{'role':'assistant','content':'Hello'}],None)=='42'
+    assert calls[0][2]['input'][-1]=={'role':'user','content':'Count tickets'}
+
+def test_content_blocks():
+    import agent
+    from langchain_core.messages import AIMessage
+    msg=AIMessage(content=[{'type':'reasoning','summary':[]},{'type':'text','text':'SELECT 1'}])
+    assert agent.message_text(msg)=='SELECT 1'

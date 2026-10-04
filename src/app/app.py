@@ -10,7 +10,6 @@ import json
 import gradio as gr
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import Config
-from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
 SERVING_ENDPOINT = os.environ.get("SERVING_ENDPOINT", "ai_data_agent_endpoint")
 CATALOG = os.environ.get("CATALOG", "ai_agent_demo")
@@ -70,7 +69,7 @@ demo = gr.ChatInterface(
         "**ETL operations** (extract, transform, load), or **product documentation** (PDF search). "
         "The AI-DECIDE router automatically directs your query to the right sub-agent:\n"
         "• **SQL Analyst** — stateful orchestration with AI-as-judge for safe query execution\n"
-        "• **ETL Analyst** — ReAct loop with UC function tools\n"
+        "• **ETL Analyst** — API extraction and CSV transformation\n"
         "• **Knowledge Search** — searches parsed PDF product documentation"
     ),
     examples=[

@@ -73,7 +73,7 @@ class SQLAgentState(BaseModel):
     Each node reads from and writes to this state, maintaining context
     across the entire pipeline without losing intermediate results.
     """
-    messages: Annotated[list, add] = Field(default_factory=list,
+    messages: list = Field(default_factory=list,
         description="Chat messages processed by the SQL agent")
     user_question: str = Field(default="", description="Raw user input")
     curated_question: str = Field(default="", description="Refined user question")
@@ -126,6 +126,14 @@ class DataAgentState(BaseModel):
 # High-end for complex reasoning and routing decisions.
 # ════════════════════════════════════════════════════════════════
 
+def message_text(message):
+    content = message.content
+    if isinstance(content, str):
+        return content
+    return "\n".join(block.get("text", "") for block in content
+                     if isinstance(block, dict) and block.get("type") in ("text", "output_text"))
+
+
 def pick_llm(level: str = "low"):
     """Return a ChatDatabricks instance based on task complexity.
 
@@ -167,20 +175,15 @@ def _execute_sql_sdk(sql: str) -> str:
 
 def _get_uc_tools():
     """Load UC Function tools for the ETL and Knowledge agents."""
-    from databricks_langchain import UCFunctionToolkit
-    function_names = [
-        f"{CATALOG}.{SCHEMA}.search_product_docs",
-        f"{CATALOG}.{SCHEMA}.get_schema_info",
-        f"{CATALOG}.{SCHEMA}.get_cust_service_data",
-        f"{CATALOG}.{SCHEMA}.get_policies",
-        f"{CATALOG}.{SCHEMA}.get_products",
-    ]
-    try:
-        toolkit = UCFunctionToolkit(function_names=function_names)
-        return toolkit.tools
-    except Exception as e:
-        logger.warning(f"Could not load UC tools: {e}")
-        return []
+    from langchain_core.tools import tool
+
+    @tool
+    def search_product_docs(query: str) -> str:
+        """Search product PDF documentation and return source filenames and content."""
+        escaped = query.replace("'", "''")
+        return _execute_sql_sdk(f"SELECT {CATALOG}.{SCHEMA}.search_product_docs('{escaped}') AS documentation")
+
+    return [search_product_docs]
 
 
 # ════════════════════════════════════════════════════════════════
@@ -194,8 +197,8 @@ def _curate_question(state: SQLAgentState) -> SQLAgentState:
     llm = pick_llm("low")  # Low-end LLM — simple text curation
     prompt = f"Curate the following question so that it is clear, specific, and well-structured. Output only the curated question, nothing else:\n\n{state.user_question}"
     response = llm.invoke(prompt)
-    state.curated_question = response.content
-    state.messages = state.messages + [HumanMessage(content=response.content)]
+    state.curated_question = message_text(response)
+    state.messages = state.messages + [HumanMessage(content=message_text(response))]
     return state
 
 
@@ -231,7 +234,7 @@ def _generate_sql(state: SQLAgentState) -> SQLAgentState:
     """Node 3: Generate SQL using a medium-end LLM with full context."""
     llm = pick_llm("medium")  # Medium LLM — code/SQL generation needs accuracy
     response = llm.invoke(state.prompt_context)
-    state.generated_sql = response.content.strip()
+    state.generated_sql = message_text(response).strip()
     if state.generated_sql.startswith("```sql"):
         state.generated_sql = state.generated_sql[6:]
     if state.generated_sql.startswith("```"):
@@ -300,7 +303,7 @@ User's original question: {state.curated_question}
 Execution result:
 {state.sql_result}"""
     response = llm.invoke(prompt)
-    state.final_answer = response.content
+    state.final_answer = message_text(response)
     state.messages = state.messages + [AIMessage(content=state.final_answer)]
     return state
 
@@ -415,7 +418,7 @@ def _build_knowledge_search_graph():
         "You are a knowledge search agent for customer support. You have access to "
         "product documentation stored in Databricks. Use the search_product_docs tool "
         "to find relevant product information and answer the user's question. "
-        "If no relevant documentation is found, say so clearly."
+        "If no relevant documentation is found, say so clearly. Cite the document filenames returned by the tool."
     )
 
     knowledge_tools = [t for t in tools if "search_product_docs" in getattr(t, "name", "")]
@@ -500,7 +503,7 @@ User question: {message}"""
         etl_input = ETLAgentState(messages=[HumanMessage(content=message)])
         result = etl_analyst.invoke({"messages": state.messages}, config={"recursion_limit": 20})
         if result.get("messages"):
-            final = result["messages"][-1].content
+            final = message_text(result["messages"][-1])
         else:
             final = str(result)
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
@@ -511,7 +514,7 @@ User question: {message}"""
         knowledge_input = KnowledgeAgentState(messages=[HumanMessage(content=message)])
         result = knowledge_agent.invoke({"messages": state.messages}, config={"recursion_limit": 20})
         if result.get("messages"):
-            final = result["messages"][-1].content
+            final = message_text(result["messages"][-1])
         else:
             final = str(result)
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
@@ -595,10 +598,10 @@ class DataAgent(ResponsesAgent):
             final_answer = result.get("final_answer", "")
             if not final_answer and result.get("messages"):
                 last_msg = result["messages"][-1]
-                final_answer = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                final_answer = message_text(last_msg) if hasattr(last_msg, 'content') else str(last_msg)
         except Exception as e:
-            logger.warning(f"Agent execution error: {e}")
-            final_answer = f"I encountered an issue processing your request. Please try again. (Debug: {e})"
+            logger.exception("Agent execution failed")
+            raise
 
         # Yield as a text output item
         yield ResponsesAgentStreamEvent(
