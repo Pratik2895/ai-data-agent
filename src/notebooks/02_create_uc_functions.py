@@ -17,47 +17,37 @@ print(f"Available tables: {table_names}")
 # --- Function 1: search_product_docs ---
 # Searches parsed PDF product documentation using AI functions.
 print("\n--- Creating search_product_docs function ---")
-spark.sql(f"DROP FUNCTION IF EXISTS {catalog}.{schema}.search_product_docs")
 spark.sql(f"""
 CREATE OR REPLACE FUNCTION {catalog}.{schema}.search_product_docs(query STRING)
 RETURNS STRING
 LANGUAGE SQL
 COMMENT 'Search parsed product documentation (PDFs) for information relevant to the query. Returns a summary answer based on product manuals and spec sheets.'
 RETURN (
-  SELECT ai_gen(concat(
-    'You are a product knowledge assistant. Answer the question based on the product documentation below. If the answer is not found, say No relevant documentation found. Question: ',
-    query,
-    ' Product documentation: ',
-    (
-      SELECT concat_ws(' | ', collect_list(concat(file_name, ': ', array_join(text_content, ' '))))
-      FROM (SELECT * FROM {catalog}.{schema}.product_docs ORDER BY file_name LIMIT 20)
-    )
-  ))
+  SELECT coalesce(concat_ws(' | ', collect_list(concat(file_name, ': ', content))), 'No documentation found')
+  FROM (
+    SELECT file_name, substring(array_join(text_content, ' '), 1, 8000) AS content
+    FROM {catalog}.{schema}.product_docs
+    WHERE exists(split(lower(query), ' '), term -> length(term) > 3
+      AND instr(lower(concat(file_name, ' ', array_join(text_content, ' '))), term) > 0)
+    ORDER BY file_name
+    LIMIT 4
+  )
 )
 """)
 print(f"  Created: {catalog}.{schema}.search_product_docs")
 
-# --- Function 2: get_schema_info ---
-# Returns table schema info for context engineering.
-print("\n--- Creating get_schema_info function ---")
-spark.sql(f"DROP FUNCTION IF EXISTS {catalog}.{schema}.get_schema_info")
-spark.sql(f"""
-CREATE OR REPLACE FUNCTION {catalog}.{schema}.get_schema_info()
-RETURNS STRING
-LANGUAGE SQL
-COMMENT 'Returns schema info for all tables: table names, column names, data types. Used for context engineering in the SQL Analyst agent.'
-RETURN (
-  SELECT concat_ws(' | ', collect_list(concat('Table: {catalog}.{schema}.', table_name,
-      ' | Columns: ', columns_text)))
-  FROM (
-    SELECT table_name, concat_ws(', ', collect_list(concat(column_name, ' (', data_type, ')'))) AS columns_text
-    FROM {catalog}.information_schema.columns
-    WHERE table_schema = '{schema}'
-    GROUP BY table_name
-  )
+# Capture only this project's schemas during setup, avoiding system-catalog access at inference.
+schema_info = "\n".join(
+    f"Table: {catalog}.{schema}.{name} | Columns: " + ", ".join(
+        f"{field.name} ({field.dataType.simpleString()})"
+        for field in spark.table(f"{catalog}.{schema}.{name}").schema.fields)
+    for name in table_names
 )
-""")
-print(f"  Created: {catalog}.{schema}.get_schema_info")
+escaped_schema = schema_info.replace("'", "''")
+spark.sql(f"""CREATE OR REPLACE FUNCTION {catalog}.{schema}.get_schema_info()
+RETURNS STRING LANGUAGE SQL
+COMMENT 'Returns the project table schemas captured during setup. Rerun setup after schema changes.'
+RETURN '{escaped_schema}'""")
 
 # --- Function 3: Table access functions ---
 print("\n--- Creating table access functions ---")
@@ -66,7 +56,6 @@ for table_name in table_names:
         continue
     func_name = f"get_{table_name}"
     full_func = f"{catalog}.{schema}.{func_name}"
-    spark.sql(f"DROP FUNCTION IF EXISTS {full_func}")
     spark.sql(f"CREATE OR REPLACE FUNCTION {full_func}() RETURNS STRING LANGUAGE SQL COMMENT 'Returns rows from {table_name} table (limited to 100). Use for data analysis.' RETURN (SELECT to_json(collect_list(struct(*))) FROM (SELECT * FROM {catalog}.{schema}.{table_name} LIMIT 100))")
     print(f"  Created: {full_func}()")
 
