@@ -1,10 +1,10 @@
 # Databricks notebook source
-# DBTITLE 1,Build and Deploy Multi-Agent System
-# Databricks notebook source
-# === Notebook 03: Build and Deploy Multi-Agent System ===
-# Installs packages, logs the ResponsesAgent to MLflow, deploys to Model Serving.
-# This builds the COMPLETE multi-agent system with sub-agents and stateful orchestration.
+# MAGIC %pip install mlflow==3.6.0 databricks-langchain==0.3.0 langgraph==1.2.12 databricks-agents sqlglot pandas requests
 
+# COMMAND ----------
+dbutils.library.restartPython()
+
+# COMMAND ----------
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 llm_endpoint = dbutils.widgets.get("llm_endpoint")
@@ -14,21 +14,13 @@ llm_high = dbutils.widgets.get("llm_high")
 agent_model_name = dbutils.widgets.get("agent_model_name")
 agent_endpoint = dbutils.widgets.get("agent_endpoint")
 
-print(f"Building agent: {agent_model_name}")
-print(f"LLM High: {llm_high}, Medium: {llm_medium}, Low: {llm_low}")
-print(f"Serving endpoint: {agent_endpoint}")
-
-# --- Step 1: Install packages ---
-print("\n=== Step 1: Installing packages ===")
-%pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic
-dbutils.library.restartPython()
-
+warehouse_id = dbutils.widgets.get("warehouse_id")
 # --- Step 2: Copy agent.py to local path ---
 print("\n=== Step 2: Preparing agent code ===")
 import shutil
 import os
 
-agent_source = "/Workspace/Users/bhikadiya.pratik@gmail.com/ai-data-agent-repo/src/agents/agent.py"
+agent_source = dbutils.widgets.get("agent_source")
 agent_local = "/tmp/agent.py"
 shutil.copy2(agent_source, agent_local)
 print(f"Copied agent.py to {agent_local}")
@@ -39,23 +31,25 @@ os.environ["LLM_MEDIUM"] = llm_medium
 os.environ["LLM_LOW"] = llm_low
 os.environ["CATALOG"] = catalog
 os.environ["SCHEMA"] = schema
+os.environ["DATABRICKS_WAREHOUSE_ID"] = warehouse_id
 
 # --- Step 3: Log model to MLflow ---
 print("\n=== Step 3: Logging agent to MLflow ===")
 import mlflow
-from mlflow.models.resources import DatabricksServingEndpoint, DatabricksFunction
+from mlflow.models.resources import DatabricksServingEndpoint, DatabricksFunction, DatabricksSQLWarehouse, DatabricksTable
 
 mlflow.set_registry_uri("databricks-uc")
 
 # Resources: LLM endpoints + UC functions used as tools
 resources = [
+    DatabricksSQLWarehouse(warehouse_id=warehouse_id),
+    *[DatabricksTable(table_name=f"{catalog}.{schema}.{t}") for t in ["cust_service_data", "products", "policies", "product_docs"]],
     DatabricksServingEndpoint(endpoint_name=llm_high),
     DatabricksServingEndpoint(endpoint_name=llm_medium),
     DatabricksServingEndpoint(endpoint_name=llm_low),
     DatabricksFunction(function_name=f"{catalog}.{schema}.search_product_docs"),
     DatabricksFunction(function_name=f"{catalog}.{schema}.get_schema_info"),
     DatabricksFunction(function_name=f"{catalog}.{schema}.get_cust_service_data"),
-    DatabricksFunction(function_name=f"{catalog}.{schema}.analyze_customer_tickets"),
 ]
 
 # Add table-access functions for any other tables
@@ -71,10 +65,12 @@ with mlflow.start_run(run_name="ai_data_agent_build") as run:
         name="agent",
         python_model=agent_local,
         resources=resources,
+        code_paths=[os.path.join(os.path.dirname(agent_source), "runtime.py")],
         pip_requirements=[
             "mlflow==3.6.0",
-            "databricks-langchain",
-            "langgraph==0.3.4",
+            "databricks-langchain==0.3.0",
+            "sqlglot", "pandas", "requests",
+            "langgraph==1.2.12",
             "databricks-agents",
         ],
         input_example={
@@ -89,18 +85,16 @@ with mlflow.start_run(run_name="ai_data_agent_build") as run:
 print("\n=== Step 4: Deploying to Model Serving ===")
 from databricks import agents
 
-try:
-    agents.deploy(
-        agent_model_name,
-        version=str(model_info.registered_model_version),
-        tags={"source": "dab", "project": "ai-data-agent"},
-    )
-    print(f"  Deployment initiated for endpoint: {agent_endpoint}")
-    print(f"  This takes ~10-15 minutes. Check status in the Model Serving UI.")
-except Exception as e:
-    print(f"  Deployment note: {e}")
-    print(f"  You can deploy manually from the Model Serving UI.")
-    print(f"  Model: {agent_model_name} version {model_info.registered_model_version}")
+agents.deploy(
+    agent_model_name,
+    model_version=int(model_info.registered_model_version),
+    endpoint_name=agent_endpoint,
+    scale_to_zero=True,
+    environment_vars={"CATALOG": catalog, "SCHEMA": schema, "LLM_HIGH": llm_high,
+                      "LLM_MEDIUM": llm_medium, "LLM_LOW": llm_low,
+                      "DATABRICKS_WAREHOUSE_ID": warehouse_id},
+    tags={"source": "dab", "project": "ai-data-agent"},
+)
 
 # --- Step 5: Summary ---
 print("\n=== Build and Deploy Complete ===")

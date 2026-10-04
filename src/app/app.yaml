@@ -1,11 +1,4 @@
-command:
-  - "python"
-  - "app.py"
-
+command: [python, app.py]
 env:
   - name: SERVING_ENDPOINT
-    value: "ai_data_agent_endpoint"
-  - name: CATALOG
-    value: "ai_agent_demo"
-  - name: SCHEMA
-    value: "customer_support"
+    valueFrom: agent-endpoint

@@ -1,0 +1,7 @@
+mlflow==3.6.0
+databricks-langchain==0.3.0
+langgraph==1.2.12
+sqlglot==30.21.0
+pandas==2.3.3
+requests==2.34.2
+python-dotenv

@@ -16,3 +16,11 @@ Thumbs.db
 test_schema_details.txt
 extracted_data.*
 transformed_data.*
+
+.venv/
+.databricks/
+.pytest_cache/
+.bundle-schema.json
+.implement.py
+
+mlruns/

@@ -1,126 +1,36 @@
 # AI Data Agent
 
-An **agentic AI solution** built on **Databricks** that automates the work of a junior data professional.
+Databricks-native LangGraph agent with a SQL analyst, a bounded ETL tool loop, and product-document search. Gradio calls the MLflow ResponsesAgent endpoint with conversation history.
 
-The system uses a **multi-agent architecture** with a parent router that classifies user queries and routes them to the appropriate sub-agent:
+## Setup
 
-- **SQL Analyst** (Stateful LangGraph): Curates questions, adds database context, generates SQL, validates safety with AI-as-judge, executes, and presents results.
-- **ETL Analyst** (React/Tool-Calling): Extracts data from APIs, transforms it with generated pandas code, and loads it to the destination.
+Requires Python 3.11 and Databricks CLI >=1.0. Authenticate to the selected workspace:
 
-All orchestrated by a single **Databricks Asset Bundle (DAB)**.
-
----
-
-## Architecture
-
-```
-User Query
-    |
-+---------------+
-|  Router Node  |  (LLM + RouterSchema -> 'SQL' or 'ETL')
-+---------------+
-    |                    |
-    v                    v
-+---------------+    +---------------+
-| SQL Analyst   |    | ETL Analyst   |
-| (Stateful)    |    | (React)       |
-+---------------+    +---------------+
-    |                    |
-    v                    v
-+---------------+
-| Final Answer  |
-+---------------+
+```powershell
+databricks auth login --profile dev-52d59088
+uv venv --python 3.11
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt pytest
+.venv/Scripts/python.exe -m pytest -q tests
+databricks bundle validate --strict --profile dev-52d59088
+databricks bundle deploy --profile dev-52d59088
+databricks bundle run setup_ai_data_agent --profile dev-52d59088
+databricks bundle run ai_data_agent_app --profile dev-52d59088
 ```
 
-### SQL Analyst (Stateful LangGraph)
+The app uses the GitHub branch configured in `resources/app.yml`; push source changes there before deploying the app. The workspace requires Git-backed Apps.
 
-```
-START -> curate_question -> prompt_query_context -> generate_sql -> is_safe_sql
-  -> [yes] execute_sql -> represent_final_answer -> END
-  -> [no]  cancel_sql -> END
-```
+The setup job copies the existing customer-service CSVs from the configured source volume, creates the target catalog/schema/volume, loads Delta tables, extracts text from PDFs, registers UC tools, logs the agent, and deploys the named serving endpoint. Supply `--var warehouse_id=<id>` for another SQL warehouse and override catalog/schema/source variables for another environment. Deployment errors fail the job instead of reporting success.
 
-### ETL Analyst (React/Tool-Calling)
+## Runtime
 
-```
-START -> llm_node <-> tool_node (loop)
-  -> [has tool calls] -> tool_node -> llm_node (repeat)
-  -> [no tool calls]  -> END
-```
+SQL runs through question curation, schema context, generation, deterministic SELECT-only catalog/schema validation, an LLM judge, bounded warehouse execution, and answer formatting. Results include column names and truncation status. Resource dependencies are declared to MLflow for serving authentication.
 
----
+ETL supports HTTPS JSON extraction, CSV inspection, column selection, duplicate removal, null removal, and CSV loading into its working directory. The default allowlist contains `jsonplaceholder.typicode.com`; configure `ETL_ALLOWED_HOSTS` explicitly for other APIs. Redirects, path traversal, oversized inputs, and arbitrary generated Python execution are rejected. Outputs are temporary serving-instance files; they are not durable Unity Catalog tables or user downloads. Configure a durable execution service before using this ETL workflow in production. Tool loops stop after 20 graph steps.
 
-## Project Structure
+Knowledge search uses the extracted PDF text via a UC function. Text extraction uses pypdf; scanned PDFs need OCR preprocessing. This implementation does not provision a Vector Search index.
 
-```
-ai-data-agent/
-+-- databricks.yml                  # Bundle configuration
-+-- resources/
-|   +-- setup.job.yml               # Setup job DAG
-|   +-- app.yml                     # Databricks App resource
-+-- src/
-|   +-- agents/
-|   |   +-- sql_analyst.py           # SQL Analyst (stateful LangGraph)
-|   |   +-- etl_analyst.py           # ETL Analyst (react LangGraph)
-|   |   +-- data_agent.py            # Parent router agent
-|   +-- models/
-|   |   +-- schema.py                # Pydantic state schemas
-|   +-- utils/
-|   |   +-- llm_picker.py            # LLM model picker (low/medium/high/claude)
-|   |   +-- database.py              # Database utility (schema introspection + query execution)
-|   |   +-- etl_tools.py             # ETL tools (extract, transform, execute code)
-|   +-- app/
-|       +-- app.py                   # Gradio chat UI
-|       +-- app.yaml                 # App runtime config
-|       +-- requirements.txt         # Python dependencies
-+-- .gitignore
-+-- README.md
-```
+Local invocation uses the same agent runtime and Databricks authentication; no separate OpenAI or Anthropic key is required. Load `.env` from `.env.example` with python-dotenv if desired, and invoke `src.agents.agent.DataAgent` with `ResponsesAgentRequest`. CLI-backed SDK authentication requires the Databricks executable on PATH (`DATABRICKS_CLI_PATH` can point to it).
 
----
+## Validation
 
-## Quick Start
-
-### Deploy
-
-```bash
-git clone https://github.com/Pratik2895/ai-data-agent.git
-cd ai-data-agent
-databricks bundle deploy
-databricks bundle run setup_ai_data_agent
-databricks apps deploy ai-data-agent-app --auto-approve
-```
-
-### Run Locally
-
-```bash
-uv add langchain langgraph langchain-openai langchain-anthropic pydantic psycopg2-binary requests pandas python-dotenv
-export OPENAI_API_KEY=your-key
-export ANTHROPIC_API_KEY=your-key
-python src/agents/data_agent.py
-```
-
----
-
-## AI Routing Decision (ai_decide)
-
-| Query | Route | Agent |
-|-------|-------|-------|
-| "What are the different payment methods?" | SQL | SQL Analyst (stateful) |
-| "Extract data from this API and save as CSV" | ETL | ETL Analyst (react) |
-
----
-
-## Key Concepts
-
-- **Stateful Orchestration**: SQL Analyst uses Pydantic state schema carried through every node
-- **React Architecture**: ETL Analyst uses a reasoning+acting loop with tool calling
-- **AI-as-Judge**: SQL safety validated by LLM with structured output (JudgeSchema)
-- **LLM Cost Optimization**: Different LLM tiers for different tasks (low/medium/high/claude)
-- **Context Engineering**: Database schema, column types, and sample data injected into prompts
-
----
-
-## License
-
-MIT
+`tests/test_runtime.py` covers unsafe SQL, cross-catalog queries, CTEs, path traversal, API URL boundaries, SQL failures, CSV transformations, the SQL graph, and ResponsesAgent output. Cloud deployment additionally requires source-data access, catalog/schema create rights, SQL warehouse usage, UC function execution, and available model-serving compute.

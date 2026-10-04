@@ -158,28 +158,11 @@ def _execute_sql_sdk(sql: str) -> str:
     """
     from databricks.sdk import WorkspaceClient
     w = WorkspaceClient()
-    warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-    if not warehouse_id:
-        try:
-            warehouses = list(w.warehouses.list())
-            if warehouses:
-                warehouse_id = warehouses[0].id
-        except Exception:
-            pass
-    if not warehouse_id:
-        return "Error: No SQL warehouse available for query execution."
     try:
-        result = w.statement_execution.execute(
-            warehouse_id=warehouse_id,
-            statement=sql,
-            wait_for_completion=True,
-            timeout=30,
-        )
-        if result.result and result.result.data_array:
-            return str(result.result.data_array[:20])
-        return "Query executed successfully (no rows returned)."
-    except Exception as e:
-        return f"Query execution error: {e}"
+        from .runtime import execute_statement
+    except ImportError:
+        from runtime import execute_statement
+    return execute_statement(w, sql)
 
 
 def _get_uc_tools():
@@ -266,6 +249,16 @@ def _is_safe_sql(state: SQLAgentState) -> SQLAgentState:
     a yes/no verdict with justification. This is a guardrail against
     SQL injection and destructive queries.
     """
+    try:
+        from .runtime import validate_sql
+    except ImportError:
+        from runtime import validate_sql
+    try:
+        validate_sql(state.generated_sql)
+    except ValueError as exc:
+        state.is_safe = "no"
+        state.judge_comments = str(exc)
+        return state
     llm = pick_llm("low")
     llm_judge = llm.with_structured_output(JudgeSchema)
     judge_prompt = f"""You are a SQL judge for data security. Determine whether the SQL query is safe to execute.
@@ -362,7 +355,11 @@ def _build_etl_analyst_graph():
         → [has tool calls] → tool_node → llm_node (loop)
         → [no tool calls]  → END
     """
-    tools = _get_uc_tools()
+    try:
+        from .runtime import etl_tools
+    except ImportError:
+        from runtime import etl_tools
+    tools = etl_tools()
     llm = pick_llm("high")  # High-end LLM for agentic tool-calling loops
 
     if tools:
@@ -372,7 +369,7 @@ def _build_etl_analyst_graph():
 
     system_prompt = (
         "You are a Python data analyst ETL agent. You have access to tools for "
-        "executing SQL queries and searching product documentation. "
+        "extracting allowlisted HTTPS JSON APIs, inspecting datasets, and applying declarative transformations. "
         "When the user asks to extract, transform, load, or analyze data, "
         "use the appropriate tools. If the task is complete, provide a direct answer."
     )
@@ -491,19 +488,19 @@ User question: {message}"""
 
     def _sql_node(state: DataAgentState) -> dict:
         """Invoke the SQL Analyst sub-agent."""
-        message = state.messages[-1].content if state.messages else ""
+        message = "\n".join(f"{m.type}: {m.content}" for m in state.messages)
         sql_input = SQLAgentState(messages=[], user_question=message)
         result = sql_analyst.invoke(sql_input)
-        final = result.final_answer if hasattr(result, 'final_answer') else str(result)
+        final = result["final_answer"]
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
 
     def _etl_node(state: DataAgentState) -> dict:
         """Invoke the ETL Analyst sub-agent (ReAct loop)."""
         message = state.messages[-1].content if state.messages else ""
         etl_input = ETLAgentState(messages=[HumanMessage(content=message)])
-        result = etl_analyst.invoke(etl_input)
-        if hasattr(result, 'messages') and result.messages:
-            final = result.messages[-1].content
+        result = etl_analyst.invoke({"messages": state.messages}, config={"recursion_limit": 20})
+        if result.get("messages"):
+            final = result["messages"][-1].content
         else:
             final = str(result)
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
@@ -512,9 +509,9 @@ User question: {message}"""
         """Invoke the Knowledge Search sub-agent."""
         message = state.messages[-1].content if state.messages else ""
         knowledge_input = KnowledgeAgentState(messages=[HumanMessage(content=message)])
-        result = knowledge_agent.invoke(knowledge_input)
-        if hasattr(result, 'messages') and result.messages:
-            final = result.messages[-1].content
+        result = knowledge_agent.invoke({"messages": state.messages}, config={"recursion_limit": 20})
+        if result.get("messages"):
+            final = result["messages"][-1].content
         else:
             final = str(result)
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
@@ -558,7 +555,7 @@ class DataAgent(ResponsesAgent):
     """
 
     def __init__(self):
-        self.graph = _build_data_agent_graph()
+        self.graph = None
 
     def predict(self, request: ResponsesAgentRequest) -> ResponsesAgentResponse:
         """Non-streaming prediction — routes user query through the full agent graph."""
@@ -590,6 +587,8 @@ class DataAgent(ResponsesAgent):
                     lc_messages.append(m)
 
             # Run the full multi-agent graph
+            if self.graph is None:
+                self.graph = _build_data_agent_graph()
             result = self.graph.invoke({"messages": lc_messages})
 
             # Extract the final answer
@@ -612,16 +611,5 @@ class DataAgent(ResponsesAgent):
 # MLFLOW EXPORT — Required for Model Serving deployment
 # ════════════════════════════════════════════════════════════════
 
-try:
-    AGENT = DataAgent()
-except Exception as e:
-    logger.warning(f"Could not fully initialize agent graph: {e}")
-    class _FallbackAgent(ResponsesAgent):
-        def predict(self, request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-            text = "Agent is initializing. Please try again in a moment."
-            return ResponsesAgentResponse(output=[self.create_text_output_item(text=text)])
-        def predict_stream(self, request: ResponsesAgentRequest) -> Generator[ResponsesAgentStreamEvent, None, None]:
-            text = "Agent is initializing. Please try again in a moment."
-            yield ResponsesAgentStreamEvent(type="response.output_item.done", item=self.create_text_output_item(text=text))
-    AGENT = _FallbackAgent()
+AGENT = DataAgent()
 mlflow.models.set_model(AGENT)

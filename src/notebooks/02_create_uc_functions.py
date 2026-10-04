@@ -51,7 +51,7 @@ RETURN (
   SELECT concat_ws('\n', collect_list(
     concat('Table: {catalog}.{schema}.', table_name, ' | Columns: ',
       (
-        SELECT concat_ws(', ', collect_list(concat(col_name, ' (', data_type, ')')))
+        SELECT concat_ws(', ', collect_list(concat(column_name, ' (', data_type, ')')))
         FROM {catalog}.information_schema.columns
         WHERE table_schema = '{schema}' AND table_name = t.table_name
       )
@@ -71,35 +71,6 @@ for table_name in table_names:
     func_name = f"get_{table_name}"
     full_func = f"{catalog}.{schema}.{func_name}"
     spark.sql(f"DROP FUNCTION IF EXISTS {full_func}")
-    spark.sql(f"CREATE OR REPLACE FUNCTION {full_func}() RETURNS TABLE LANGUAGE SQL COMMENT 'Returns rows from {table_name} table (limited to 100). Use for data analysis.' RETURN SELECT * FROM {catalog}.{schema}.{table_name} LIMIT 100")
+    spark.sql(f"CREATE OR REPLACE FUNCTION {full_func}() RETURNS STRING LANGUAGE SQL COMMENT 'Returns rows from {table_name} table (limited to 100). Use for data analysis.' RETURN (SELECT to_json(collect_list(struct(*))) FROM (SELECT * FROM {catalog}.{schema}.{table_name} LIMIT 100))")
     print(f"  Created: {full_func}()")
 
-# --- Function 4: analyze_customer_tickets ---
-print("\n--- Creating analyze_customer_tickets function ---")
-spark.sql(f"DROP FUNCTION IF EXISTS {catalog}.{schema}.analyze_customer_tickets")
-spark.sql(f"""
-CREATE OR REPLACE FUNCTION {catalog}.{schema}.analyze_customer_tickets(query STRING)
-RETURNS STRING
-LANGUAGE SQL
-COMMENT 'Analyze customer service tickets using AI. Pass a natural language question about customer issues or service patterns.'
-RETURN (
-  SELECT ai_gen(concat(
-    'You are a customer service analyst. Answer based on the customer service data below. Question: ',
-    query,
-    ' Customer service data: ',
-    (
-      SELECT concat_ws(' | ', collect_list(cast(Ticket_ID as string)))
-      FROM {catalog}.{schema}.cust_service_data
-      LIMIT 50
-    )
-  ))
-)
-""")
-print(f"  Created: {catalog}.{schema}.analyze_customer_tickets")
-
-# --- Summary ---
-print("\n=== UC Functions Created ===")
-funcs = spark.sql(f"SHOW USER FUNCTIONS IN {catalog}.{schema}").collect()
-for f in funcs:
-    print(f"  {f.function}")
-print(f"\nTotal functions: {len(funcs)}")

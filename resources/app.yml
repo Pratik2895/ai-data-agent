@@ -1,19 +1,16 @@
-# Databricks App resource for the AI Data Agent chat UI (browser agent).
-# The app calls the Model Serving endpoint to interact with the multi-agent system.
 resources:
   apps:
     ai_data_agent_app:
       name: ${var.app_name}
-      description: "AI Data Agent — Multi-agent system with SQL Analyst, ETL Analyst, and Knowledge Search sub-agents. Features stateful orchestration, ReAct loops, AI-as-judge, and LLM routing."
-      source_code_path: /Workspace/Users/bhikadiya.pratik@gmail.com/ai-data-agent-repo/src/app
+      description: AI Data Agent chat interface
       resources:
-        - name: ai_data_agent_endpoint
-          description: Model Serving endpoint for the AI Data Agent
-          job_type: SERVING_ENDPOINT
-      env:
-        - name: SERVING_ENDPOINT
-          value: ${var.agent_endpoint}
-        - name: CATALOG
-          value: ${var.catalog}
-        - name: SCHEMA
-          value: ${var.schema}
+      - name: agent-endpoint
+        serving_endpoint:
+          name: ${var.agent_endpoint}
+          permission: CAN_QUERY
+      git_repository:
+        url: https://github.com/Pratik2895/ai-data-agent.git
+        provider: gitHub
+      git_source:
+        branch: codex/complete-data-agent
+        source_code_path: src/app

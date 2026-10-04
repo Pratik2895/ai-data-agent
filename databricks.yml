@@ -1,21 +1,12 @@
-# Databricks Asset Bundle: AI Data Agent — Multi-Agent System
-# Demonstrates: Stateful Orchestration, ReAct Loops, Context Engineering,
-# AI-as-Judge, Sub-Agents (SQL Analyst, ETL Analyst, Knowledge Search),
-# LLM Routing, UC Functions as Tools, Model Serving, Databricks App
-
 bundle:
   name: ai-data-agent
-  engine: direct
-
 include:
-  - resources/*.yml
-
+- resources/*.yml
 sync:
   exclude:
-    - "data/**"
-    - ".git/**"
-    - ".gitignore"
-
+  - data/**
+  - .git/**
+  - .gitignore
 variables:
   catalog:
     description: Unity Catalog catalog for all project objects.
@@ -40,7 +31,7 @@ variables:
     default: databricks-llama-4-maverick
   llm_low:
     description: Low-end LLM for simple tasks (curation, formatting).
-    default: databricks-meta-llama-3-1-8b-instruct
+    default: databricks-gpt-oss-20b
   llm_medium:
     description: Medium LLM for SQL generation and code tasks.
     default: databricks-gpt-oss-20b
@@ -49,23 +40,24 @@ variables:
     default: databricks-llama-4-maverick
   agent_model_name:
     description: Registered model name in Unity Catalog for the agent.
-    default: ai_agent_demo.customer_support.data_agent
+    default: ${var.catalog}.${var.schema}.data_agent
   agent_endpoint:
     description: Model Serving endpoint name for the deployed data agent.
     default: ai_data_agent_endpoint
   app_name:
     description: Databricks App name (must be unique in the workspace).
     default: ai-data-agent-app
-
+  warehouse_id:
+    description: SQL warehouse used by the agent
+    default: 0a214d63e620a999
 targets:
   dev:
     mode: development
     default: true
     presets:
-      name_prefix: ""
+      name_prefix: ''
     workspace:
       profile: dev-52d59088
-
   prod:
     mode: production
     workspace:

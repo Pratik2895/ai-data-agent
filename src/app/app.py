@@ -46,24 +46,14 @@ def respond(message, history, request: gr.Request):
 
     try:
         ws = _workspace_client(user_token)
-        sdk_messages = []
-        for m in messages:
-            r_str = m["role"].lower()
-            if r_str == "user":
-                role = ChatMessageRole.USER
-            elif r_str == "assistant":
-                role = ChatMessageRole.ASSISTANT
-            elif r_str == "system":
-                role = ChatMessageRole.SYSTEM
-            else:
-                role = ChatMessageRole.USER
-            sdk_messages.append(ChatMessage(role=role, content=m["content"]))
-        resp = ws.serving_endpoints.query(
-            name=SERVING_ENDPOINT,
-            messages=sdk_messages,
-            max_tokens=1000,
-        )
-        return resp.choices[0].message.content
+        from urllib.parse import quote
+        resp = ws.api_client.do("POST", f"/serving-endpoints/{quote(SERVING_ENDPOINT, safe='')}/invocations",
+                                body={"input": messages})
+        texts = [part.get("text", "") for item in resp.get("output", [])
+                 for part in item.get("content", []) if part.get("type") == "output_text"]
+        if not texts:
+            raise RuntimeError("Endpoint returned no text output")
+        return "\n".join(texts)
     except Exception as e:
         return (
             f"⚠️ Could not reach the agent endpoint `{SERVING_ENDPOINT}`.\n\n"
@@ -90,7 +80,6 @@ demo = gr.ChatInterface(
         "Analyze customer complaint patterns and find the most common issue types",
         "I want to extract data from an API and save it as CSV",
     ],
-    theme=gr.themes.Soft(),
 )
 
 if __name__ == "__main__":
