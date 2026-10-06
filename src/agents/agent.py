@@ -134,6 +134,35 @@ def message_text(message):
                      if isinstance(block, dict) and block.get("type") in ("text", "output_text"))
 
 
+def summarize_etl(messages):
+    """Present executed tool results without exposing model-generated tool transcripts."""
+    tools = [message for message in messages if isinstance(message, ToolMessage)]
+    if not tools:
+        return "Provide an approved HTTPS API URL or an existing CSV dataset name to start ETL."
+    latest = {message.name: message for message in tools}
+    if any(getattr(message, "status", "success") == "error" for message in latest.values()):
+        return "ETL could not complete. Check the API URL, dataset name, and requested columns, then retry."
+    datasets = []
+    preview = None
+    for message in tools:
+        try:
+            result = json.loads(message_text(message))
+        except (ValueError, TypeError):
+            continue
+        if isinstance(result, dict) and all(key in result for key in ("dataset", "rows", "columns")):
+            datasets.append(result)
+        elif isinstance(result, list):
+            preview = result
+    if datasets:
+        result = datasets[-1]
+        columns = ", ".join(f"`{column}`" for column in result["columns"])
+        return (f"Saved **{result['dataset']}** with **{result['rows']} rows**.\n\n"
+                f"Columns: {columns}.\n\nCSV output is temporary on the agent instance.")
+    if preview is not None:
+        return "Dataset preview:\n\n```json\n" + json.dumps(preview, indent=2) + "\n```"
+    return "ETL did not produce a verified dataset result. Please retry with a supported extraction or CSV transformation."
+
+
 def pick_llm(level: str = "low"):
     """Return a ChatDatabricks instance based on task complexity.
 
@@ -502,10 +531,7 @@ User question: {message}"""
         message = state.messages[-1].content if state.messages else ""
         etl_input = ETLAgentState(messages=[HumanMessage(content=message)])
         result = etl_analyst.invoke({"messages": state.messages}, config={"recursion_limit": 20})
-        if result.get("messages"):
-            final = message_text(result["messages"][-1])
-        else:
-            final = str(result)
+        final = summarize_etl(result.get("messages", []))
         return {"final_answer": final, "messages": [AIMessage(content=final)]}
 
     def _knowledge_node(state: DataAgentState) -> dict:
