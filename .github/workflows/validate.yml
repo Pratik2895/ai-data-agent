@@ -1,0 +1,19 @@
+name: Validate agent
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - run: uv venv
+      - run: uv pip install -r requirements.txt -r src/app/requirements.txt pytest
+      - run: uv run --no-project python -m pytest -q tests
+      - run: uv run --no-project python -m compileall -q src main.py
