@@ -77,6 +77,8 @@ def main():
     etl = ask('etl', f'Extract https://jsonplaceholder.typicode.com/posts into posts_{suffix}.csv, '
               f'select only id and title and save transformed_{suffix}.csv, then inspect the saved output. '
               'Report the actual row count and column names.')
+    if 'ipython' in etl.lower() or 'inspect_dataset(' in etl.lower():
+        raise AssertionError('ETL answer exposes an internal tool transcript')
     if not all(value in etl.lower() for value in ('100', 'id', 'title')):
         raise AssertionError('ETL did not report the expected transformed dataset')
     chat = Client(app.url, headers={'Authorization': 'Bearer ' + credentials['access_token']}, verbose=False)
