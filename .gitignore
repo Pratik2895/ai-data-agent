@@ -27,3 +27,5 @@ mlruns/
 
 .live-*.py
 .run-export.json
+
+/deployment-verification.json
