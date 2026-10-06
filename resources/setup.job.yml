@@ -49,6 +49,7 @@ resources:
             catalog: '{{job.parameters.catalog}}'
             schema: '{{job.parameters.schema}}'
             volume: '{{job.parameters.volume}}'
+            warehouse_id: '{{job.parameters.warehouse_id}}'
       - task_key: build_and_deploy_agent
         depends_on:
         - task_key: create_uc_functions

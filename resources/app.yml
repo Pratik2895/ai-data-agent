@@ -12,5 +12,5 @@ resources:
         url: https://github.com/Pratik2895/ai-data-agent.git
         provider: gitHub
       git_source:
-        branch: codex/complete-data-agent
+        branch: main
         source_code_path: src/app
