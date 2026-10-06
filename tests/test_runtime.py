@@ -64,3 +64,15 @@ def test_content_blocks():
     from langchain_core.messages import AIMessage
     msg=AIMessage(content=[{'type':'reasoning','summary':[]},{'type':'text','text':'SELECT 1'}])
     assert agent.message_text(msg)=='SELECT 1'
+
+
+def test_verification_uses_traffic_routed_model():
+    from scripts.verify_deployment import active_model_version
+    entities=[N(name='old', entity_version='2'), N(name='new', entity_version='3')]
+    routes=[N(served_entity_name='new', served_model_name='new', traffic_percentage=100),
+            N(served_entity_name='old', served_model_name='old', traffic_percentage=0)]
+    endpoint=N(config=N(served_entities=entities,traffic_config=N(routes=routes)))
+    assert active_model_version(endpoint)=='3'
+    routes[0].traffic_percentage=50
+    routes[1].traffic_percentage=50
+    with pytest.raises(RuntimeError,match='100 percent'): active_model_version(endpoint)

@@ -12,6 +12,14 @@ from databricks.sdk.service.sql import StatementState
 from gradio_client import Client
 
 
+def active_model_version(endpoint):
+    routes = [route for route in endpoint.config.traffic_config.routes if route.traffic_percentage > 0]
+    if len(routes) != 1 or routes[0].traffic_percentage != 100:
+        raise RuntimeError('Expected 100 percent of traffic on one model version')
+    name = routes[0].served_entity_name or routes[0].served_model_name
+    return next(entity.entity_version for entity in endpoint.config.served_entities if entity.name == name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', required=True)
@@ -78,7 +86,7 @@ def main():
     if str(expected_count) not in re.sub(r'[,\s]', '', text):
         raise AssertionError('App answer does not match the warehouse count')
     report = {'verified_at_utc': datetime.now(timezone.utc).isoformat(),
-              'endpoint': args.endpoint, 'model_version': endpoint.config.served_entities[0].entity_version,
+              'endpoint': args.endpoint, 'model_version': active_model_version(endpoint),
               'app_url': app.url, 'expected_ticket_count': expected_count, 'checks': results}
     Path(args.output).write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding='utf-8')
     print('All deployment checks passed', flush=True)
