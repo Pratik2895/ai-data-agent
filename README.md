@@ -38,3 +38,13 @@ Local invocation uses the same agent runtime and Databricks authentication; no s
 GitHub Actions runs the offline tests and Python compilation on pushes and pull requests.
 
 `tests/test_runtime.py` covers unsafe SQL, cross-catalog queries, CTEs, path traversal, API URL boundaries, SQL failures, CSV transformations, the SQL graph, and ResponsesAgent output. Cloud deployment additionally requires source-data access, catalog/schema create rights, SQL warehouse usage, UC function execution, and available model-serving compute.
+
+## Verify a deployment
+
+Once the setup job finishes and the serving endpoint is fully ready, run:
+
+```powershell
+.venv/Scripts/python.exe scripts/verify_deployment.py --profile dev-52d59088 --host https://dbc-316f5fb6-3c9c.cloud.databricks.com --warehouse-id 0a214d63e620a999
+```
+
+This checks SQL results against the warehouse, PDF citations, API extraction/CSV transformation, and the Gradio app through authenticated APIs. It writes a local `deployment-verification.json` report without credentials. The app now deploys from the merged `main` branch. UC tool creation uses metadata and SQL warehouse APIs, avoiding Spark initialization for that task.
